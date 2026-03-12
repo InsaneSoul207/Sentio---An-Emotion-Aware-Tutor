@@ -14,11 +14,11 @@ Sentio doesn't just "detect emotions"; it maps raw expressions (via DeepFace) to
 
 ### 🎯 Semantic Intent Engine (NLP)
 Instead of a simple chatbot, Sentio uses a **Meta-Prompting Gatekeeper**:
-* **Intent Matcher:** Uses **Sentence Embeddings (text-embedding-004)** to categorize user queries into one of 60 pre-defined Socratic archetypes (e.g., *Direct Code Request*, *Verification*, *Emotional Venting*).
+* **Intent Matcher:** Uses **Sentence Embeddings (gemini-embedding-001)** to categorize user queries into one of 60 pre-defined Socratic archetypes (e.g., *Direct Code Request*, *Verification*, *Emotional Venting*).
 * **Instruction Synthesis:** Automatically wraps the student's question in a pedagogical instruction *before* it reaches the LLM.
 
 ### 📚 Multimodal RAG
-Integrates **Gemini 1.5 Flash** with a **FAISS Vector DB** to provide context-aware tutoring based on uploaded PDFs and image screenshots.
+Integrates **Gemini 2.5 Flash Lite** with a **FAISS Vector DB** to provide context-aware tutoring based on uploaded PDFs and image screenshots.
 
 ---
 
