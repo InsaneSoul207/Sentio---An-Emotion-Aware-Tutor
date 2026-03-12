@@ -1,27 +1,35 @@
 import streamlit as st
 import cv2
 import time
+import os
 from Emotion import EmotionDetector
 from tutor_engine import GeminiSocraticTutor
 
-st.set_page_config(page_title="Sentio AI Tutor", layout="wide")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="Sentio | Socratic AI", layout="wide", initial_sidebar_state="collapsed")
 
+# Minimalist Professional CSS
 st.markdown("""
     <style>
-    .reportview-container {
-        background: #f0f2f6;
+    /* Force GPU Rendering to stop background glitches */
+    html, body, [data-testid="stAppViewContainer"] {
+        overflow: hidden; 
+        height: 100vh; 
+        background: #0b0e14;
+        -webkit-backface-visibility: hidden;
+        -webkit-transform: translate3d(0, 0, 0);
     }
-    .main {
-        padding-top: 2rem;
-    }
-    /* Fixed height for chat to prevent page scrolling */
-    .stChatFloatingInputContainer {
-        padding-bottom: 20px;
+    
+    /* Smooth out the video display */
+    [data-testid="stImage"] {
+        border-radius: 12px;
+        transition: none;
     }
     </style>
     """, unsafe_allow_html=True)
 
-API_KEY = "YOUR_GOOGLE_API_KEY_HERE"  # Replace with your actual API key
+# --- CONFIG & INITIALIZATION ---
+API_KEY = "AIzaSyA_xjoY-XoACHqT_CT-lefRJO3t1EvxTlU"  # Replace with your actual API key
 
 if 'tutor' not in st.session_state:
     st.session_state.tutor = GeminiSocraticTutor(API_KEY)
@@ -32,66 +40,90 @@ if 'messages' not in st.session_state:
 if 'last_emotion' not in st.session_state:
     st.session_state.last_emotion = "neutral"
 
-col_left, col_right = st.columns([1, 2])
+# --- MAIN LAYOUT ---
+left_col, right_col = st.columns([1, 2.5], gap="large")
 
-with col_left:
-    st.subheader("Monitoring & Assets")
+with left_col:
+    st.title("SENTIO")
     
-    video_feed = st.empty()
-    status_text = st.empty()
+    # 1. Vision Feed (Top Left)
+    video_placeholder = st.empty()
+    emotion_display = st.empty()
     
     st.divider()
     
-    st.write("### Uploads")
-    up_pdf = st.file_uploader("Textbook (PDF)", type="pdf")
-    up_img = st.file_uploader("Problem Screenshot", type=["png", "jpg", "jpeg"])
+    # 2. Asset Management (Below Video)
+    st.subheader("Study Assets")
+    up_pdf = st.file_uploader("Textbook PDF", type="pdf", label_visibility="collapsed")
+    up_img = st.file_uploader("Visual Problem (IMG)", type=["png", "jpg"], label_visibility="collapsed")
 
+    # Knowledge Base Logic
     if up_pdf and 'kb' not in st.session_state:
         from knowledge_engine import KnowledgeBase
-        with st.spinner("Processing PDF..."):
-            with open("temp_study.pdf", "wb") as f: f.write(up_pdf.getbuffer())
-            st.session_state.kb = KnowledgeBase("temp_study.pdf", API_KEY)
-        st.success("Knowledge Base Loaded")
+        with st.spinner("Indexing PDF..."):
+            with open("active_study.pdf", "wb") as f: f.write(up_pdf.getbuffer())
+            st.session_state.kb = KnowledgeBase("active_study.pdf", API_KEY)
+        st.toast("Knowledge Base Linked!")
 
-with col_right:
-    st.title("Sentio Socratic Tutor")
+with right_col:
+    # 3. Chat Space (Fixed Height)
+    chat_box = st.container(height=600, border=False)
     
-    chat_box = st.container(height=550)
-    
+    # Render Message History
     with chat_box:
         for m in st.session_state.messages:
             with st.chat_message(m["role"]):
                 st.markdown(m["content"])
 
-    if prompt := st.chat_input("Ask a question..."):
+    # 4. Chat Input Logic
+    if prompt := st.chat_input("Ask me about the material..."):
+        # Store user text
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_box:
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-        context = st.session_state.kb.search_context(prompt) if 'kb' in st.session_state else ""
-        img_p = "current_query.png" if up_img else None
+        # Gather context
+        rag_context = st.session_state.kb.search_context(prompt) if 'kb' in st.session_state else ""
+        
+        # Handle temporary image storage for multimodal query
+        img_path = None
         if up_img:
-            with open(img_p, "wb") as f: f.write(up_img.getbuffer())
+            img_path = "query_visual.png"
+            with open(img_path, "wb") as f: f.write(up_img.getbuffer())
 
+        # Generate Adaptive Response
         with chat_box:
             with st.chat_message("assistant"):
-                response = st.session_state.tutor.get_response(
-                    prompt, 
-                    st.session_state.last_emotion, 
-                    context, 
-                    img_p
-                )
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                with st.spinner("Thinking Socraticly..."):
+                    response = st.session_state.tutor.get_response(
+                        user_text=prompt,
+                        emotion=st.session_state.last_emotion,
+                        context=rag_context,
+                        image_path=img_path
+                    )
+                    st.markdown(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
 
+# --- LIVE CAMERA THREAD ---
+# Note: Streamlit reruns the script, but this loop keeps the feed live
 cap = cv2.VideoCapture(0)
 while True:
     ret, frame = cap.read()
     if ret:
-        st.session_state.last_emotion, _ = st.session_state.detector.analyze_frame(frame)
-        fr = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        video_feed.image(fr, channels="RGB", use_container_width=True)
-        status_text.info(f"Current State: {st.session_state.last_emotion.upper()}")
+        # Detect state via Vision Engine
+        state, confidence = st.session_state.detector.analyze_frame(frame)
+        st.session_state.last_emotion = state
         
-    time.sleep(0.05)
+        # Convert for Streamlit display
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        video_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
+        
+        # Update Status UI
+        emotion_display.markdown(f"""
+            <div class="status-box">
+                AFFECTIVE_STATE: <span style="color:#007bff;">{state.upper()}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    time.sleep(0.04)
